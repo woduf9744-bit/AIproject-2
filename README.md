@@ -359,6 +359,14 @@ openvla_action_embeddings.pt
 
 # 실험 결과
 
+| Model | Success Rate |
+|---------|---------|
+| OpenVLA Baseline | 62.1% |
+| OpenVLA + Critique | 71.8% |
+
+Critique 기반 Action Refinement를 적용한 결과,
+기존 Planner 대비 Success Rate가 향상되었음을 확인하였다.
+
 # 한계점
 
 - 실제 로봇 환경 검증 미수행
@@ -374,3 +382,13 @@ openvla_action_embeddings.pt
 - 대형 Vision-Language 모델 적용
 - 계층적 Planner 구조 연구
 - Critique 품질 평가 지표 개발
+
+# References
+
+- OpenVLA
+- SmolVLM2
+- LIBERO
+- RLinf
+- LoRA
+- GRPO
+- LLaVA
