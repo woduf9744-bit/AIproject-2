@@ -447,12 +447,6 @@ Action Loss
 
 ## 학습 로그
 
-아래 그림은 SFT 학습 과정에서의 Loss 변화를 나타낸다.
-
-<p align="center">
-  <img src="images/loss_curve.png" width="700">
-</p>
-
 Action Loss는 7.5337에서 0.0081까지 감소하였으며, 학습이 안정적으로 수렴하는 것을 확인
 
 # 한계점
