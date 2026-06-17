@@ -1,32 +1,39 @@
 # AIproject : 비판적 재평가 텍스트를 통한 Planner 성능 개선 Dual-System VLA 모델
 
-> OpenVLA(Planner)와 SmolVLM 500B(Actor)을 결합한 듀얼 시스템 VLA(Vision-Language-Action) 모델.
+> OpenVLA(Planner)와 SmolVLM2-500M-Video-Instruct을 결합한 듀얼 시스템 VLA(Vision-Language-Action) 모델.
 > Planner가 생성한 action을 Actor가 **비판적으로 재평가**하여 조작 성능을 개선하는 구조를 제안하고 구현함.
 
 # 프로젝트 소개
 
-기존 Vision-Language-Action(VLA) 모델은 현재 환경 이미지와 작업 명령을 입력받아 로봇 행동(Action Token)을 생성한다.
+기존 Vision-Language-Action(VLA) 모델은 현재 환경 이미지와 작업 명령을 입력받아 로봇 행동(Action Token)을 생성
 
-하지만 대부분의 모델은 생성한 행동을 그대로 수행하며, 행동의 적절성을 스스로 평가하거나 수정하는 과정이 존재하지 않는다.
+하지만 대부분의 모델은 생성한 행동을 그대로 수행하며, 행동의 적절성을 스스로 평가하거나 수정하는 과정이 존재하지 않음
 
-본 연구는 Planner가 생성한 행동을 Critic Actor가 분석하고, 자연어 기반 비판적 설명(Critique)을 생성한 뒤 수정된 행동(Action Token)을 다시 생성하는 Dual-System 구조를 제안한다.
+본 연구는 Planner가 생성한 행동을 Critic Actor가 분석하고, 자연어 기반 비판적 설명(Critique)을 생성한 뒤 수정된 행동(Action Token)을 다시 생성하는 Dual-System 구조를 제안
 
-Critic Actor는 행동의 문제점을 자연어로 설명하고 수정 방향을 제시하며, 강화학습을 통해 행동 수정 정책(Action Refinement Policy)을 지속적으로 개선한다.
+Critic Actor는 행동의 문제점을 자연어로 설명하고 수정 방향을 제시하며, 강화학습을 통해 행동 수정 정책(Action Refinement Policy)을 지속적으로 개선
 
-실제 로봇 환경 구축 비용을 고려하여 LIBERO 시뮬레이션 환경에서 실험을 수행하였다.
+실제 로봇 환경 구축 비용을 고려하여 LIBERO 시뮬레이션 환경에서 실험을 수행
+
+초기 Critic Actor는 Qwen2.5-VL 기반으로 구현하였으나,
+강화학습 과정에서 높은 VRAM 사용량과 OOM(Out of Memory) 문제가 발생하였다.
+
+이에 따라 최종 실험은 경량 Vision-Language 모델인 SmolVLM2-500M-Video-Instruct 기반으로 전환하여 진행
+
+SmolVLM은 Action Token 이식, Critique 생성, Action Refinement를 수행하는 최종 Critic Actor로 사용
 
 # 시스템 구조
 
 ![Figure1](https://github.com/user-attachments/assets/edbb073d-d40e-452a-873f-a4de54bc41b6)
 - **1. Model Structure**
 
-전체 시스템은 Planner와 Critic Actor로 구성된다.
+전체 시스템은 Planner와 Critic Actor로 구성
 
 Planner는 행동을 생성하고,
-Critic Actor는 행동을 분석하여 Critique를 생성한 뒤 수정된 행동을 출력한다.
+Critic Actor는 행동을 분석하여 Critique를 생성한 뒤 수정된 행동을 출력
 
 수정된 행동은 LIBERO 환경에서 평가되며,
-GRPO를 통해 행동 수정 정책을 학습한다.
+GRPO를 통해 행동 수정 정책을 학습
 
 # 핵심 구조
 
@@ -34,7 +41,7 @@ GRPO를 통해 행동 수정 정책을 학습한다.
 - **2. Model Process**
 
 
-Critic Actor는 다음 세 가지 정보를 동시에 입력받는다.
+Critic Actor는 다음 세 가지 정보를 동시에 입력받음
 
 - 환경 이미지
 - 작업 명령(Task Instruction)
@@ -58,27 +65,27 @@ Critic Actor는 다음 세 가지 정보를 동시에 입력받는다.
 ![Figure4](https://github.com/user-attachments/assets/e5adbf70-5ef6-4e22-94d6-8828ed1dc6be)
 - **4. FLow Chart**
 
- Planner와 Actor는 ZeroMQ를 통해 통신하며, 학습에 사용되는 이미지 및 텍스트 데이터는 모두 LIBERO 환경에서 수집된다.
+ Planner와 Actor는 ZeroMQ를 통해 통신하며, 학습에 사용되는 이미지 및 텍스트 데이터는 모두 LIBERO 환경에서 수집
 
-Actor 초기화 과정에서는 OpenVLA의 256개 Action Token을 추가하고, Action Embedding Table을 생성한 뒤 Projection Layer를 연결하여 Tokenizer를 구성한다.
+Actor 초기화 과정에서는 OpenVLA의 256개 Action Token을 추가하고, Action Embedding Table을 생성한 뒤 Projection Layer를 연결하여 Tokenizer를 구성
 
 강화학습 과정은 RLinf 프레임워크를 기반으로 구현되었다.
 
-먼저 collect_rollout() 단계에서 LIBERO 환경으로부터 데이터를 수집하며, Actor는 비판적 텍스트와 수정된 Action Token을 생성한다. 생성된 행동은 환경에서 실행되며, 수행 결과를 바탕으로 Reward와 Loss가 계산된다.
+먼저 collect_rollout() 단계에서 LIBERO 환경으로부터 데이터를 수집하며, Actor는 비판적 텍스트와 수정된 Action Token을 생성한다. 생성된 행동은 환경에서 실행되며, 수행 결과를 바탕으로 Reward와 Loss가 계산
 
-이후 compute_grpo_loss() 단계에서 정책 업데이트가 수행되며, LoRA 파라미터가 학습된다.
+이후 compute_grpo_loss() 단계에서 정책 업데이트가 수행되며, LoRA 파라미터가 학습
  
 ---
 ![Figure5](https://github.com/user-attachments/assets/1c0fbf23-fe96-475a-8827-3fd545224f3e)
 - **5. Actor Tokenizer Process**
 
- 이미지 데이터는 Vision Encoder를 통과하여 Vision Embedding으로 변환되며, 텍스트 데이터는 Language Model을 통해 Text Embedding으로 변환된다.
+ 이미지 데이터는 Vision Encoder를 통과하여 Vision Embedding으로 변환되며, 텍스트 데이터는 Language Model을 통해 Text Embedding으로 변환
 
-Planner에서 전달받은 Action Token은 OpenVLA Action Embedding Table을 통해 임베딩으로 변환된 뒤 Projection Layer를 거쳐 SmolVLM 임베딩 공간으로 매핑된다.
+Planner에서 전달받은 Action Token은 OpenVLA Action Embedding Table을 통해 임베딩으로 변환된 뒤 Projection Layer를 거쳐 SmolVLM 임베딩 공간으로 매핑
 
-이후 Image Embedding, Text Embedding, Action Embedding은 Input Merge와 Action Injection Hook을 통해 하나의 입력 시퀀스로 결합된다.
+이후 Image Embedding, Text Embedding, Action Embedding은 Input Merge와 Action Injection Hook을 통해 하나의 입력 시퀀스로 결합
 
-결합된 입력은 Transformer를 통과하며, 최종적으로 Critique와 수정된 Action Token을 생성한다.
+결합된 입력은 Transformer를 통과하며, 최종적으로 Critique와 수정된 Action Token을 생성
 
 ---
 ![Figure6](https://github.com/user-attachments/assets/f106f294-3e26-4129-ab98-1bde2140310e)
@@ -86,9 +93,9 @@ Planner에서 전달받은 Action Token은 OpenVLA Action Embedding Table을 통
 
 초기 상태의 모델은 Critique 형식과 Action Token 출력 형식을 학습하지 않은 상태이므로, 바로 GRPO 학습을 수행할 경우 지속적으로 패널티를 받아 학습이 불안정해질 수 있다.
 
-이를 해결하기 위해 SFT를 먼저 수행하여 기본적인 출력 형식을 학습하도록 하였다.
+이를 해결하기 위해 SFT를 먼저 수행하여 기본적인 출력 형식을 학습하도록 함
 
-SFT 단계에서는 다음 능력을 우선적으로 학습한다.
+SFT 단계에서는 다음 능력을 우선적으로 학습
 
 Critique 생성 형식 학습
 Action Token 출력 형식 학습
@@ -121,33 +128,61 @@ Action Token 출력 형식 학습
 | 양자화 | 4bit Quantization |
 | 통신 | ZeroMQ |
 
+
 # 학습 과정
 
-본 연구는 다음과 같은 순서로 학습을 수행하였다.
+본 연구는 다음과 같은 단계로 학습을 진행
 
-### 1. Action Embedding 추출
+## Stage 1. Action Embedding 이식
 
-OpenVLA Action Embedding을 추출하여 Actor 모델에 이식
+OpenVLA가 사용하는 Action Token을 Critic Actor가 이해할 수 있도록 Action Embedding을 이식
 
-### 2. SFT
+수행 내용
 
-Critique 생성 형식과 Action Token 출력 형식을 학습
+- OpenVLA Action Embedding 추출
+- Projection Layer 연결
+- SmolVLM Tokenizer에 Action Token 256개 추가
+- Action Embedding 초기화
 
-예시
+이를 통해 Planner가 생성한 Action Token을 Actor가 직접 입력으로 사용할 수 있도록 구성
 
-[CRITIQUE]
-Action may collide with the object.
-[/CRITIQUE]
+---
 
-[ACTION]
-<action_15>
-<action_32>
-...
-[/ACTION]
+## Stage 2. Supervised Fine-Tuning (SFT)
 
-### 3. GRPO 강화학습
+초기 모델은 Critique 형식과 Action Token 출력 형식을 학습하지 않은 상태이므로, GRPO 학습 이전에 SFT를 수행
 
-Critique 기반 Action Refinement 정책 학습
+학습 목표
+
+- Critique 출력 형식 학습
+- Action Token 출력 형식 학습
+- 행동 수정 패턴 학습
+- 이미지 및 명령 기반 행동 분석 학습
+
+최종 Stage 2.5 학습 결과
+
+Action Loss
+
+7.5337
+↓
+0.0081
+
+까지 감소하였으며,
+
+7개의 Action Token이 안정적으로 출력되는 것을 확인
+
+---
+
+## Stage 3. GRPO 파이프라인 구축
+
+SFT 이후 GRPO 기반 강화학습 구조를 구현
+
+구현 내용
+
+- Rollout 수집
+- Reward 계산
+- GRPO Loss 계산
+- LoRA 파라미터 업데이트
 
 학습 흐름
 
@@ -163,9 +198,30 @@ Reward Calculation
 ↓
 GRPO Update
 
+---
+# 현재 진행 상태
+
+현재까지 완료된 항목
+
+- Planner-Actor Dual-System 구조 구현
+- OpenVLA Action Token 이식
+- Projection Layer 구현
+- SmolVLM Action Tokenizer 구현
+- SFT Stage 2.5 완료
+- GRPO 파이프라인 구현
+- LIBERO 환경 연동
+- ZeroMQ 기반 Planner-Actor 통신 구현
+
+아직 진행 중인 항목
+
+- 장기 GRPO 학습
+- Success Rate 정량 평가
+- LIBERO-Long 검증
+- 실제 로봇 환경 검증
+
 # Reward Function
 
-보상 함수는 다음 요소를 조합하여 계산한다.
+보상 함수는 다음 요소를 조합하여 계산
 
 | 항목 | Reward |
 |--------|--------|
@@ -175,7 +231,9 @@ GRPO Update
 | Invalid Action | -1.0 |
 | Time Penalty | -0.01 × overtime |
 
-최종 Reward를 이용하여 GRPO 정책 업데이트를 수행한다.
+GRPO 학습을 위해 다음과 같은 보상 함수를 설계
+
+향후 장기 GRPO 학습에서 사용할 예정
 
 # 📁 openvla_planner
 
@@ -207,7 +265,7 @@ Output
 
 OpenVLA 원본 Action Tokenizer.
 
-본 프로젝트에서 사용하는 Action Token 구조를 확인하기 위해 유지하였다.
+본 프로젝트에서 사용하는 Action Token 구조를 확인하기 위해 유지
 
 주요 역할
 
@@ -217,7 +275,13 @@ OpenVLA 원본 Action Tokenizer.
 
 ---
 
-# 📁 qwen_actor
+# 📁 qwen_actor (Legacy Implementation)
+
+초기 Critic Actor 구현 버전.
+
+Qwen2.5-VL 기반으로 구현하였으나,
+강화학습 과정에서 높은 VRAM 사용량으로 인해
+최종 실험에서는 사용하지 않음
 
 Qwen 기반 Critic Actor 구현.
 
@@ -235,7 +299,7 @@ OpenVLA Hidden Size : 4096
 Qwen Hidden Size    : 2048
 ```
 
-LLaVA Projection Layer 구조를 참고하였다.
+LLaVA Projection Layer 구조를 참고
 
 ### actor_model.py
 
@@ -250,7 +314,7 @@ LLaVA Projection Layer 구조를 참고하였다.
 
 # 📁 SmolVLM_actor
 
-Qwen 모델의 높은 VRAM 사용량 문제를 해결하기 위해 구현하였다.
+Qwen 모델의 높은 VRAM 사용량 문제를 해결하기 위해 구현
 
 ### smol_action_tokenizer.py
 
@@ -359,13 +423,37 @@ openvla_action_embeddings.pt
 
 # 실험 결과
 
-| Model | Success Rate |
-|---------|---------|
-| OpenVLA Baseline | 62.1% |
-| OpenVLA + Critique | 71.8% |
+## SFT 학습 결과
 
-Critique 기반 Action Refinement를 적용한 결과,
-기존 Planner 대비 Success Rate가 향상되었음을 확인하였다.
+Action Loss
+
+7.5337
+↓
+0.0081
+
+까지 감소하였으며,
+
+7개의 Action Token이 안정적으로 출력되는 것을 확인하였다.
+
+## 구현 결과
+
+- Planner-Actor 구조 동작 확인
+- Critique 생성 확인
+- Action Refinement 생성 확인
+- GRPO Rollout 수집 확인
+- Reward 계산 확인
+
+현재 장기 GRPO 학습 및 정량 성능 평가는 진행 중이다.
+
+## 학습 로그
+
+아래 그림은 SFT 학습 과정에서의 Loss 변화를 나타낸다.
+
+<p align="center">
+  <img src="images/loss_curve.png" width="700">
+</p>
+
+Action Loss는 7.5337에서 0.0081까지 감소하였으며, 학습이 안정적으로 수렴하는 것을 확인
 
 # 한계점
 
@@ -385,10 +473,23 @@ Critique 기반 Action Refinement를 적용한 결과,
 
 # References
 
-- OpenVLA
-- SmolVLM2
-- LIBERO
-- RLinf
-- LoRA
-- GRPO
-- LLaVA
+1. OpenVLA
+https://github.com/openvla/openvla
+
+2. SmolVLM2-500M-Video-Instruct
+https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+
+3. LIBERO Benchmark
+https://github.com/Lifelong-Robot-Learning/LIBERO
+
+4. LoRA: Low-Rank Adaptation of Large Language Models
+https://arxiv.org/abs/2106.09685
+
+5. DeepSeekMath (GRPO)
+https://arxiv.org/abs/2402.03300
+
+6. RLinf Framework
+https://github.com/RLinf/RLinf
+
+7. LLaVA
+https://github.com/haotian-liu/LLaVA
